@@ -1,0 +1,4 @@
+; Sample config for Labelord
+
+[github]
+token = MY_SECRET_TOKEN
