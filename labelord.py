@@ -14,8 +14,7 @@ class NotFoundException(Exception):
 class GithubErrorException(Exception):
     pass
 
-def github_session(token):
-    session = requests.Session()
+def github_session(session, token):
     session.headers = {'User-Agent': 'Python'}
     
     def token_auth(req):
@@ -23,7 +22,6 @@ def github_session(token):
         return req
 
     session.auth = token_auth
-    return session
 
 # Check status code of https request
 def check_status_code(r):
@@ -91,7 +89,8 @@ def cli(ctx, config, token):
         sys.exit(3)               
 
     # Use session for communication with GitHub
-    session = ctx.obj.get('session', github_session(token))
+    session = ctx.obj.get('session', requests.Session())
+    github_session(session, token)
     if 'session' not in ctx.obj:
         ctx.obj['session'] = session
 
