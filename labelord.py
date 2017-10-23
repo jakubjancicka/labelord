@@ -24,29 +24,29 @@ def github_session(session, token):
     session.auth = token_auth
 
 # Check status code of https request
-def check_status_code(r):
+def check_status_code(r, data={}):
     if r.status_code == 401:
-        raise BadCredentialException({'error': 'GitHub: ERROR 401 - Bad credentials', 'status': r.status_code, 'message': r.json()['message'], 'code': 4})
+        raise BadCredentialException({'error': 'GitHub: ERROR 401 - Bad credentials', 'status': r.status_code, 'message': r.json()['message'], 'data': data, 'code': 4})
     
     if r.status_code == 404:
-        raise NotFoundException({'error': 'GitHub: ERROR 404 - Not Found', 'status': r.status_code, 'message': r.json()['message'], 'code': 5})
+        raise NotFoundException({'error': 'GitHub: ERROR 404 - Not Found', 'status': r.status_code, 'message': r.json()['message'], 'data': data, 'code': 5})
     
     if r.status_code < 200 or r.status_code > 299:
-        raise GithubErrorException({'error': 'GitHub: ERROR {} - {}'.format(r.status_code, r.json()['message']), 'status': r.status_code, 'message': r.json()['message'], 'code': 10})
+        raise GithubErrorException({'error': 'GitHub: ERROR {} - {}'.format(r.status_code, r.json()['message']), 'status': r.status_code, 'data': data, 'message': r.json()['message'], 'code': 10})
 
 # GET request
-def get_request(session, url):
-    data = []
+def get_request(session, url, data={}):
+    content = []
     r = session.get(url)
-    check_status_code(r) 
-    data.extend(r.json())
+    check_status_code(r, data) 
+    content.extend(r.json())
     
     while 'next' in r.links:
         r = session.get(r.links['next']['url'])
-        check_status_code(r) 
-        data.extend(r.json())
+        check_status_code(r, data) 
+        content.extend(r.json())
     
-    return data
+    return content
 
 # Get all repos accessible to the authenticated user
 def get_repos(session):
@@ -54,19 +54,37 @@ def get_repos(session):
 
 # Get repo labels
 def get_labels(session, repo):
-    return get_request(session, 'https://api.github.com/repos/{}/labels?per_page=100&page=1'.format(repo))
+    return get_request(session, 'https://api.github.com/repos/{}/labels?per_page=100&page=1'.format(repo), {'repo': repo})
 
 def add_label(session, repo, label_name, label_color):
     r = session.post('https://api.github.com/repos/{}/labels'.format(repo), json = {'name': label_name, 'color': label_color})
-    check_status_code(r)
+    check_status_code(r, {'repo': repo, 'label_name': label_name, 'label_color': label_color})
 
 def update_label(session, repo, label_name, label_color):
     r = session.patch('https://api.github.com/repos/{}/labels/{}'.format(repo, label_name), json = {'name': label_name, 'color': label_color})
-    check_status_code(r)
+    check_status_code(r), {'repo': repo, 'label_name': label_name, 'label_color': label_color}
 
 def delete_label(session, repo, label_name):
     r = session.delete('https://api.github.com/repos/{}/labels/{}'.format(repo, label_name))
-    check_status_code(r)
+    check_status_code(r, {'repo': repo, 'label_name': label_name})
+
+def output(msg, mode, verbose, quiet, dry, error):
+    second_tag = 'DRY' if dry else 'ERR' if error else 'SUC'
+    if error and ((verbose and quiet) or (not verbose and not quiet)):
+        print("ERROR: {}; {}".format(mode, msg), file=sys.stderr)
+    elif verbose:
+        print("[{}][{}] {}".format(mode, second_tag, msg))
+
+def summary(repo_count, error_count, verbose, quiet):
+    sum_string = '[SUMMARY]' if verbose and not quiet else 'SUMMARY:'
+    if error_count == 0:
+        if not quiet or (quiet and verbose):
+            print("{} {} repo(s) updated successfully".format(sum_string, repo_count))
+        return 0
+    else:
+        if not quiet or (quiet and verbose):
+            print("{} {} error(s) in total, please check log above".format(sum_string, error_count))
+        return 10
 
 @click.group('labelord')
 @click.option('-c', '--config', default='config.cfg', help='Path to config file')
@@ -176,26 +194,57 @@ def run(ctx, template_repo, all_repos, dry_run, verbose, quiet, mode):
             for repo_label in get_labels(ctx.obj['session'], repository):
                 repo_labels[repo_label['name']] = repo_label['color']  
         except (BadCredentialException, NotFoundException, GithubErrorException) as e:
-            #TODO chyby
+            details = e.args[0]
+            output('{}; {} - {}'.format(details['data']['repo'], details['status'], details['message']), 'LBL', verbose, quiet, False, True)
             error_count += 1
             continue
 
         # if replace mode -> delete unwanted labels
         if mode == 'replace':
-            for repo_label_name, color in repo_labels.items():
+            for repo_label_name, repo_label_color in repo_labels.items():
                 if repo_label_name not in labels:
-                    delete_label(ctx.obj['session'], repository, repo_label_name)
+                    try:
+                        if not dry_run:
+                            delete_label(ctx.obj['session'], repository, repo_label_name)
+                            output('{}; {}; {}'.format(repository, repo_label_name, repo_label_color), 'DEL', verbose, quiet, False, False)
+                        else:
+                            output('{}; {}; {}'.format(repository, repo_label_name, repo_label_color), 'DEL', verbose, quiet, True, False)
+                    except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+                        details = e.args[0]
+                        output('{}; {}; {}; {} - {}'.format(details['data']['repo'], details['data']['label_name'], details['data']['label_color'],
+                                details['status'], details['message']), 'DEL', verbose, quiet, False, True)
+                        error_count += 1
         
         # update labels
         for label_name, label_color in labels.items():
             if label_name not in repo_labels:
-                add_label(ctx.obj['session'], repository, label_name, label_color)  
+                try:                
+                    if not dry_run:
+                        add_label(ctx.obj['session'], repository, label_name, label_color)  
+                        output('{}; {}; {}'.format(repository, label_name, label_color), 'ADD', verbose, quiet, False, False)
+                    else:
+                        output('{}; {}; {}'.format(repository, label_name, label_color), 'ADD', verbose, quiet, True, False)
+                except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+                    details = e.args[0]
+                    output('{}; {}; {}; {} - {}'.format(details['data']['repo'], details['data']['label_name'], details['data']['label_color'],
+                                details['status'], details['message']), 'ADD', verbose, quiet, False, True)
+                    error_count += 1
+                
             elif label_color != repo_labels[label_name]:
-                update_label(ctx.obj['session'], repository, label_name, label_color)  
-
-    
+                try:
+                    if not dry_run:
+                        update_label(ctx.obj['session'], repository, label_name, label_color)  
+                        output('{}; {}; {}'.format(repository, label_name, label_color), 'UPD', verbose, quiet, False, False)
+                    else:
+                        output('{}; {}; {}'.format(repository, label_name, label_color), 'UPD', verbose, quiet, True, False)
+                except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+                    details = e.args[0]
+                    output('{}; {}; {}; {} - {}'.format(details['data']['repo'], details['data']['label_name'], details['data']['label_color'],
+                                details['status'], details['message']), 'UPD', verbose, quiet, False, True)
+                    error_count += 1
+                
     # Print summary
-
+    return summary(len(repositories), error_count, verbose, quiet)
 
 if __name__ == '__main__':
     cli(obj={})
