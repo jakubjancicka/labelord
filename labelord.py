@@ -20,6 +20,15 @@ class NotFoundException(Exception):
 class GithubErrorException(Exception):
     pass
 
+def set_token(session, token):
+    # Exit if token has not been provided    
+    if not token:    
+        print("No GitHub token has been provided", file=sys.stderr)
+        sys.exit(3)               
+
+    # Use session for communication with GitHub
+    github_session(session, token)
+
 # Create proper header for Github
 def github_session(session, token):
     session.headers = {'User-Agent': 'Python'}
@@ -109,20 +118,16 @@ def cli(ctx, config, token):
     if token is None and 'github' in ctx.obj['config'] and 'token' in ctx.obj['config']['github']:        
         token = ctx.obj['config']['github']['token']
     
-    # Exit if token has not been provided    
-    if not token:    
-        print("No GitHub token has been provided", file=sys.stderr)
-        sys.exit(3)               
-
-    # Use session for communication with GitHub
+    ctx.obj['token'] = token
     session = ctx.obj.get('session', requests.Session())
-    github_session(session, token)
     if 'session' not in ctx.obj:
         ctx.obj['session'] = session
+     
 
 @cli.command(help='Show available repositories.')
 @click.pass_context
 def list_repos(ctx):
+    set_token(ctx.obj['session'], ctx.obj['token'])
     try:
         repos = get_repos(ctx.obj['session'])
     except (BadCredentialException, GithubErrorException) as e:
@@ -136,6 +141,7 @@ def list_repos(ctx):
 @click.argument('repo')
 @click.pass_context
 def list_labels(ctx, repo):
+    set_token(ctx.obj['session'], ctx.obj['token'])
     try:
         labels = get_labels(ctx.obj['session'], repo)
     except (BadCredentialException, NotFoundException, GithubErrorException) as e:
@@ -154,6 +160,7 @@ def list_labels(ctx, repo):
 @click.argument('mode', type=click.Choice(['update', 'replace']))
 @click.pass_context
 def run(ctx, template_repo, all_repos, dry_run, verbose, quiet, mode):
+    set_token(ctx.obj['session'], ctx.obj['token'])
     # Get labels according to user settings
     labels = {}
     if template_repo is not None:
