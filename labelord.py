@@ -5,54 +5,74 @@ import requests
 import configparser
 import sys
 
-def parse_config_file(config_file):
-    conf = configparser.ConfigParser()
-    conf.read(config_file)
-    config = {}
+def github_session(token):
+    session = requests.Session()
+    session.headers = {'User-Agent': 'Python'}
     
-    for section in conf.sections():
-        config[section] = {}
+    def token_auth(req):
+        req.headers['Authorization'] = 'token ' + token
+        return req
+
+    session.auth = token_auth
+    return session
+
+# Get all repos accessible to the authenticated user
+def get_repos(session):
+    r = session.get('https://api.github.com/user/repos?per_page=100&page=1')
     
-        for option in conf.options(section):
-            config[section][option] = conf.get(section, option)
-    return config
+    if r.status_code != 200:
+        sys.exit(10)
     
+    return r.json()
 
 @click.group('labelord')
 @click.option('-c', '--config', default='config.cfg', help='Path to config file')
 @click.option('-t', '--token', envvar='GITHUB_TOKEN', help='Secret token for Github account')
 @click.pass_context
 def cli(ctx, config, token):
-    # TODO: Add and process required app-wide options
-    # You can/should use context 'ctx' for passing
-    # data and objects to commands
-    
     # Read config from config file
-    ctx.obj['config'] = parse_config_file(config)
-
+    cfg = configparser.ConfigParser()
+    cfg.optionxform = str
+    cfg.read(config)
+    ctx.obj['config'] = cfg
+    
     # Read token if option or argument are not used
-    if token is None and 'github' in ctx.obj['config']:        
-        token = ctx.obj['config']['github'].get('token')
+    if token is None and 'github' in ctx.obj['config'] and 'token' in ctx.obj['config']['github']:        
+        token = ctx.obj['config']['github']['token']
     
     # Exit if token has not been provided    
     if not token:    
         print("No GitHub token has been provided", file=sys.stderr)
         sys.exit(3)               
-    
 
-    # Use this session for communication with GitHub
-    #session = ctx.obj.get('session', requests.Session())
+    # Use session for communication with GitHub
+    session = ctx.obj.get('session', github_session(token))
+    if 'session' not in ctx.obj:
+        ctx.obj['session'] = session
+
+    # Verify connection
+    try:
+        r = session.get('https://api.github.com/user/repos')
+    except requests.exceptions.ConnectionError:
+        print("Connection with Github can't be established", file=sys.stderr)
+        sys.exit(2)               
+    
+    if r.status_code == 401:
+        print("GitHub: ERROR 401 - Bad credentials", file=sys.stderr)
+        sys.exit(4)               
 
 @cli.command()
 @click.pass_context
 def list_repos(ctx):
-    # TODO: Add required options/arguments
-    # TODO: Implement the 'list_repos' command
-    pass
-
+    repos = get_repos(ctx.obj['session'])
+    
+    for repo in repos:
+        print(repo['full_name'])
+    
 @cli.command()
+@click.argument('repo')
 @click.pass_context
-def list_labels(ctx):
+def list_labels(ctx, repo):
     # TODO: Add required options/arguments
     # TODO: Implement the 'list_labels' command
     pass
