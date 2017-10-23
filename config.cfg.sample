@@ -2,3 +2,13 @@
 
 [github]
 token = MY_SECRET_TOKEN
+
+[labels]
+Test = FF0000
+
+[repos]
+user/repo = on
+user/repo2 = off
+
+[others]
+template-repo = user/repo
