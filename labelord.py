@@ -5,6 +5,15 @@ import requests
 import configparser
 import sys
 
+class BadCredentialException(Exception):
+    pass
+
+class NotFoundException(Exception):
+    pass
+
+class GithubErrorException(Exception):
+    pass
+
 def github_session(token):
     session = requests.Session()
     session.headers = {'User-Agent': 'Python'}
@@ -19,15 +28,13 @@ def github_session(token):
 # Check status code of https request
 def check_status_code(status_code):
     if status_code == 401:
-        print("GitHub: ERROR 401 - Bad credentials", file=sys.stderr)
-        sys.exit(4)               
+        raise BadCredentialException({'message': 'GitHub: ERROR 401 - Bad credentials', 'code': 4})
     
     if status_code == 404:
-        print("GitHub: ERROR 404 - Not Found", file=sys.stderr)
-        sys.exit(5)               
+        raise NotFoundException({'message': 'GitHub: ERROR 404 - Not Found', 'code': 5})
     
     if status_code != 200:
-        sys.exit(10)
+        raise GithubErrorException({'message': 'GitHub: ERROR {}'.format(status_code), 'code': 10})
 
 # Get request
 def get_request(session, url):
@@ -79,7 +86,13 @@ def cli(ctx, config, token):
 @cli.command()
 @click.pass_context
 def list_repos(ctx):
-    repos = get_repos(ctx.obj['session'])
+    try:
+        repos = get_repos(ctx.obj['session'])
+    except BadCredentialException as e:
+        print(e.args[0]['message'], file=sys.stderr)
+        sys.exit(e.args[0]['code'])               
+    except GithubErrorException as e:
+        sys.exit(e.args[0]['code'])               
     
     for repo in repos:
         print(repo['full_name'])
@@ -88,16 +101,23 @@ def list_repos(ctx):
 @click.argument('repo')
 @click.pass_context
 def list_labels(ctx, repo):
-    labels = get_labels(ctx.obj['session'], repo)
+    try:
+        labels = get_labels(ctx.obj['session'], repo)
+    except (BadCredentialException, NotFoundException) as e:
+        print(e.args[0]['message'], file=sys.stderr)
+        sys.exit(e.args[0]['code'])               
+    except GithubErrorException as e:
+        sys.exit(e.args[0]['code'])               
     
     for label in labels:
         print("#{} {}".format(label['color'], label['name']))
 
 @cli.command()
 @click.option('-r', '--template-repo', help='Name of the repo which serves as template')
-@click.option('-a', '--all-repos', is_flag=True, default=False, help='Choose all available repositories')
+@click.option('-a', '--all-repos', is_flag=True, default=False, help='Use all available repositories')
+@click.argument('mode', type=click.Choice(['update', 'replace']))
 @click.pass_context
-def run(ctx, template_repo, all_repos):
+def run(ctx, template_repo, all_repos, mode):
     # Get labels according to user settings
     labels = []
     if template_repo is not None:
@@ -123,6 +143,7 @@ def run(ctx, template_repo, all_repos):
         print("No repositories specification has been found", file=sys.stderr)
         sys.exit(7)
 
+    
 
 if __name__ == '__main__':
     cli(obj={})
