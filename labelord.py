@@ -26,28 +26,28 @@ def github_session(token):
     return session
 
 # Check status code of https request
-def check_status_code(status_code):
-    if status_code == 401:
-        raise BadCredentialException({'message': 'GitHub: ERROR 401 - Bad credentials', 'code': 4})
+def check_status_code(r):
+    if r.status_code == 401:
+        raise BadCredentialException({'error': 'GitHub: ERROR 401 - Bad credentials', 'status': r.status_code, 'message': r.json()['message'], 'code': 4})
     
-    if status_code == 404:
-        raise NotFoundException({'message': 'GitHub: ERROR 404 - Not Found', 'code': 5})
+    if r.status_code == 404:
+        raise NotFoundException({'error': 'GitHub: ERROR 404 - Not Found', 'status': r.status_code, 'message': r.json()['message'], 'code': 5})
     
-    if status_code != 200:
-        raise GithubErrorException({'message': 'GitHub: ERROR {}'.format(status_code), 'code': 10})
+    if r.status_code < 200 or r.status_code > 299:
+        raise GithubErrorException({'error': 'GitHub: ERROR {} - {}'.format(r.status_code, r.json()['message']), 'status': r.status_code, 'message': r.json()['message'], 'code': 10})
 
-# Get request
+# GET request
 def get_request(session, url):
     data = []
     r = session.get(url)
-    check_status_code(r.status_code) 
+    check_status_code(r) 
     data.extend(r.json())
     
     while 'next' in r.links:
         r = session.get(r.links['next']['url'])
-        check_status_code(r.status_code) 
+        check_status_code(r) 
         data.extend(r.json())
-
+    
     return data
 
 # Get all repos accessible to the authenticated user
@@ -57,6 +57,18 @@ def get_repos(session):
 # Get repo labels
 def get_labels(session, repo):
     return get_request(session, 'https://api.github.com/repos/{}/labels?per_page=100&page=1'.format(repo))
+
+def add_label(session, repo, label_name, label_color):
+    r = session.post('https://api.github.com/repos/{}/labels'.format(repo), json = {'name': label_name, 'color': label_color})
+    check_status_code(r)
+
+def update_label(session, repo, label_name, label_color):
+    r = session.patch('https://api.github.com/repos/{}/labels/{}'.format(repo, label_name), json = {'name': label_name, 'color': label_color})
+    check_status_code(r)
+
+def delete_label(session, repo, label_name):
+    r = session.delete('https://api.github.com/repos/{}/labels/{}'.format(repo, label_name))
+    check_status_code(r)
 
 @click.group('labelord')
 @click.option('-c', '--config', default='config.cfg', help='Path to config file')
@@ -88,10 +100,8 @@ def cli(ctx, config, token):
 def list_repos(ctx):
     try:
         repos = get_repos(ctx.obj['session'])
-    except BadCredentialException as e:
-        print(e.args[0]['message'], file=sys.stderr)
-        sys.exit(e.args[0]['code'])               
-    except GithubErrorException as e:
+    except (BadCredentialException, GithubErrorException) as e:
+        print(e.args[0]['error'], file=sys.stderr)
         sys.exit(e.args[0]['code'])               
     
     for repo in repos:
@@ -103,10 +113,8 @@ def list_repos(ctx):
 def list_labels(ctx, repo):
     try:
         labels = get_labels(ctx.obj['session'], repo)
-    except (BadCredentialException, NotFoundException) as e:
-        print(e.args[0]['message'], file=sys.stderr)
-        sys.exit(e.args[0]['code'])               
-    except GithubErrorException as e:
+    except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+        print(e.args[0]['error'], file=sys.stderr)
         sys.exit(e.args[0]['code'])               
     
     for label in labels:
@@ -115,18 +123,31 @@ def list_labels(ctx, repo):
 @cli.command()
 @click.option('-r', '--template-repo', help='Name of the repo which serves as template')
 @click.option('-a', '--all-repos', is_flag=True, default=False, help='Use all available repositories')
+@click.option('-d', '--dry-run', is_flag=True, default=False, help='Run program without actual changes')
+@click.option('-v', '--verbose', is_flag=True, default=False, help='Print all messages')
+@click.option('-q', '--quiet', is_flag=True, default=False, help='No output')
 @click.argument('mode', type=click.Choice(['update', 'replace']))
 @click.pass_context
-def run(ctx, template_repo, all_repos, mode):
+def run(ctx, template_repo, all_repos, dry_run, verbose, quiet, mode):
     # Get labels according to user settings
-    labels = []
+    labels = {}
     if template_repo is not None:
-        labels = get_labels(ctx.obj['session'], template_repo)     
+        try:
+            for label in get_labels(ctx.obj['session'], template_repo):
+                labels[label['name']] = label['color']  
+        except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+            print(e.args[0]['error'], file=sys.stderr)
+            sys.exit(e.args[0]['code'])               
     elif 'others' in ctx.obj['config'] and 'template-repo' in ctx.obj['config']['others']:
-        labels = get_labels(ctx.obj['session'], ctx.obj['config']['others']['template-repo'])           
+        try:
+            for label in get_labels(ctx.obj['session'], ctx.obj['config']['others']['template-repo']):
+                labels[label['name']] = label['color']
+        except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+            print(e.args[0]['error'], file=sys.stderr)
+            sys.exit(e.args[0]['code'])               
     elif 'labels' in ctx.obj['config']:
         for label_name in ctx.obj['config']['labels']:
-            labels.append({'name': label_name, 'color': ctx.obj['config']['labels'][label_name]}) 
+            labels[label_name] = ctx.obj['config']['labels'][label_name]
     else:
         print("No labels specification has been found", file=sys.stderr)
         sys.exit(6)
@@ -134,16 +155,48 @@ def run(ctx, template_repo, all_repos, mode):
     # Get repositories according to user settings
     repositories = []
     if all_repos:
-        repositories = get_repos(ctx.obj['session'])
+        try:        
+            for repo in get_repos(ctx.obj['session']):
+                repositories.append(repo['full_name'])
+        except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+            print(e.args[0]['error'], file=sys.stderr)
+            sys.exit(e.args[0]['code'])               
     elif 'repos' in ctx.obj['config']:
         for repo_name in ctx.obj['config']['repos']:
             if ctx.obj['config'].getboolean('repos', repo_name):
-                repositories.append({'full_name': repo_name}) 
+                repositories.append(repo_name) 
     else:
         print("No repositories specification has been found", file=sys.stderr)
         sys.exit(7)
+    
+    error_count = 0;
+    
+    for repository in repositories:
+        repo_labels = {}
+        try:
+            for repo_label in get_labels(ctx.obj['session'], repository):
+                repo_labels[repo_label['name']] = repo_label['color']  
+        except (BadCredentialException, NotFoundException, GithubErrorException) as e:
+            #TODO chyby
+            error_count += 1
+            continue
+
+        # if replace mode -> delete unwanted labels
+        if mode == 'replace':
+            for repo_label_name, color in repo_labels.items():
+                if repo_label_name not in labels:
+                    delete_label(ctx.obj['session'], repository, repo_label_name)
+        
+        # update labels
+        for label_name, label_color in labels.items():
+            if label_name not in repo_labels:
+                add_label(ctx.obj['session'], repository, label_name, label_color)  
+            elif label_color != repo_labels[label_name]:
+                update_label(ctx.obj['session'], repository, label_name, label_color)  
 
     
+    # Print summary
+
 
 if __name__ == '__main__':
     cli(obj={})
