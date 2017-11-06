@@ -1,4 +1,4 @@
 from .cli import cli
-from .web import LabelordWeb 
+from .web import app 
 
-__all__ = ['cli', 'LabelordWeb']
+__all__ = ['cli', 'app']
