@@ -1,3 +1,4 @@
+import click
 import configparser
 import flask
 import hashlib
