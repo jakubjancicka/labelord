@@ -2,7 +2,7 @@ __venv__
 .cache/
 __pycache__
 tests*
-config.cfg
+labelord/config.cfg
 build/
 dist/
 *.egg-info

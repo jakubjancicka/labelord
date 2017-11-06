@@ -1,5 +1,0 @@
-click
-requests
-configparser
-flask
-werkzeug
