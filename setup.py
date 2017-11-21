@@ -5,7 +5,7 @@ with open('README') as f:
 
 setup(
     name='labelord_jancijak',
-    version='0.3',
+    version='0.3.1',
     description='Management of GitHub labels',
     long_description=long_description,
     keywords='Github,labels,management,synchronization',
@@ -16,6 +16,8 @@ setup(
     packages=['labelord'],
     package_data={'labelord': ['templates/*.html', 'static/*.css', 'config.cfg.sample']},
     install_requires=['flask', 'click', 'requests', 'configparser', 'werkzeug'],
+    setup_requires=['pytest-runner'],
+    tests_require=['pytest', 'betamax', 'flexmock'],   
     entry_points={
         'console_scripts': [
             'labelord = labelord.cli:main',
