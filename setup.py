@@ -5,7 +5,7 @@ with open('README') as f:
 
 setup(
     name='labelord_jancijak',
-    version='0.3.1',
+    version='0.4.0',
     description='Management of GitHub labels',
     long_description=long_description,
     keywords='Github,labels,management,synchronization',
