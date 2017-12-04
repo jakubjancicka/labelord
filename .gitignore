@@ -6,3 +6,5 @@ labelord/config.cfg
 build/
 dist/
 *.egg-info
+docs/_build
+.eggs
