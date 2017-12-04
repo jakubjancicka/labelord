@@ -1,3 +1,6 @@
+"""
+This module contains helper functions.
+"""
 import click
 import configparser
 import os
@@ -16,6 +19,13 @@ NO_REPOS_SPEC_RETURN = 7
 
 
 def create_config(config_filename=None, token=None):
+    """
+    Parse configuration file.
+
+    :param: ``config_filename``: Path to configuration file.
+    :token: ``token``: Github token.
+    :return: Dictionary with configuration.
+    """
     cfg = configparser.ConfigParser()
     cfg.optionxform = str
     cfg_filename = config_filename or DEFAULT_CONFIG_FILE
@@ -28,6 +38,13 @@ def create_config(config_filename=None, token=None):
     return cfg
 
 def extract_labels(gh, template_opt, cfg):
+    """
+    Extract labels from configuration.
+    
+    :param: ``gh``: GitHub object
+    :param: ``template_opt``: Template repository
+    :param: ``cfg``: Dictionary with configuration
+    """
     if template_opt is not None:
         return gh.list_labels(template_opt)
     if cfg.has_section('others') and 'template-repo' in cfg['others']:
@@ -39,6 +56,12 @@ def extract_labels(gh, template_opt, cfg):
 
 
 def extract_repos(cfg):
+    """
+    Extract repositories from configuration.
+    
+    :param: ``cfg``: Dictionary with configuration
+    :return: List of repositories.
+    """
     if cfg.has_section('repos'):
         repos = cfg['repos'].keys()
         return [r for r in repos if cfg['repos'].getboolean(r, False)]

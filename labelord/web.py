@@ -1,3 +1,6 @@
+"""
+This module contains classes and functions for Web application.
+"""
 import click
 import configparser
 import flask
@@ -41,7 +44,9 @@ class LabelordChange:
 
 
 class LabelordWeb(flask.Flask):
-
+    """
+    Class **LabelordWeb** represents Flask web application
+    """
     def __init__(self, labelord_config, github, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.labelord_config = labelord_config
@@ -49,9 +54,17 @@ class LabelordWeb(flask.Flask):
         self.ignores = {}
 
     def inject_session(self, session):
+        """
+        Inject session.
+        
+        :param: ``session``: session
+        """
         self.github.set_session(session)
 
     def reload_config(self):
+        """
+        Reload config file.
+        """
         config_filename = os.environ.get('LABELORD_CONFIG', None)
         self.labelord_config = create_config(
             token=os.getenv('GITHUB_TOKEN', None),
@@ -62,6 +75,11 @@ class LabelordWeb(flask.Flask):
 
     @property
     def repos(self):
+        """
+        Extract repositories.
+        
+        :return: List of repositories.
+        """
         return extract_repos(flask.current_app.labelord_config)
 
     def _check_config(self):
@@ -82,11 +100,20 @@ class LabelordWeb(flask.Flask):
             self.errorhandler(code)(LabelordWeb._error_page)
 
     def finish_setup(self):
+        """
+        Check config and init error handlers.
+        """
         self._check_config()
         self._init_error_handlers()
 
     @staticmethod
     def create_app(config=None, github=None):
+        """
+        Create application.
+
+        :param: ``config``: congiuration file
+        :param: ``github``: GitHub object
+        """
         cfg = config or create_config(
             token=os.getenv('GITHUB_TOKEN', None),
             config_filename=os.getenv('LABELORD_CONFIG', None)
@@ -100,17 +127,39 @@ class LabelordWeb(flask.Flask):
         return flask.render_template('error.html', error=error), error.code
 
     def cleanup_ignores(self):
+        """
+        Clenaup ingore repositories.
+        """
         for repo in self.ignores:
             self.ignores[repo] = [c for c in self.ignores[repo]
                                   if c.is_valid()]
 
     def process_label_webhook_create(self, label, repo):
+        """
+        Create label on Github.
+
+        :param: ``label``: Created label.
+        :param: ``repo``: Given repository.
+        """
         self.github.create_label(repo, label['name'], label['color'])
 
     def process_label_webhook_delete(self, label, repo):
+        """
+        Delete label on Github.
+
+        :param: ``label``: Created label.
+        :param: ``repo``: Given repository.
+        """
         self.github.delete_label(repo, label['name'])
 
     def process_label_webhook_edit(self, label, repo, changes):
+        """
+        Update label on Github.
+
+        :param: ``label``: Created label.
+        :param: ``repo``: Given repository.
+        :param: ``changes``: Desired changes.
+        """
         name = old_name = label['name']
         color = label['color']
         if 'name' in changes:
@@ -118,6 +167,11 @@ class LabelordWeb(flask.Flask):
         self.github.update_label(repo, name, color, old_name)
 
     def process_label_webhook(self, data):
+        """
+        Process response from Github.
+
+        :param: ``data``: Response from GitHub.
+        """
         self.cleanup_ignores()
         action = data['action']
         label = data['label']
@@ -158,17 +212,26 @@ app = LabelordWeb.create_app()
 
 @app.before_first_request
 def finalize_setup():
+    """
+    Setup finalization.
+    """
     flask.current_app.finish_setup()
 
 
 @app.route('/', methods=['GET'])
 def index():
+    """
+    Index action.
+    """
     repos = flask.current_app.repos
     return flask.render_template('index.html', repos=repos)
 
 
 @app.route('/', methods=['POST'])
 def hook_accept():
+    """
+    Accept hook.
+    """
     headers = flask.request.headers
     signature = headers.get('X-Hub-Signature', '')
     event = headers.get('X-GitHub-Event', '')
