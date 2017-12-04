@@ -22,8 +22,11 @@ Documentation contains information about installation, license and describes con
 If you want to build documentation, run following commands from top level direcory of this repository:
 
     cd ./docs
+
     python -m install -r requirements.txt
+
     make doctest
+
     make html
     
 
