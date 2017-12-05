@@ -20,6 +20,7 @@ This part of the documentation contains information about installation, license 
     config_file
     cli_application
     web_application
+    examples
 
 API Reference
 =============
