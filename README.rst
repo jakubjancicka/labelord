@@ -29,6 +29,7 @@ If you want to build documentation, run following commands from top level direco
 
     make html
     
+Documentation is also published `online` <http://labelord-jancijak.readthedocs.io/en/latest/>`_.
 
 Configuration
 -------------
