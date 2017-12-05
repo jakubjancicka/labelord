@@ -1,2 +1,4 @@
 include LICENSE
 recursive-include tests *
+recursive-include docs *
+prune docs/_build
